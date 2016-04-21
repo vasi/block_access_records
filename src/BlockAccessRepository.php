@@ -270,6 +270,11 @@ class BlockAccessRepository implements BlockRepositoryInterface {
    *   An array of arrays of fields.
    */
   protected function buildAccessRows(Block $block) {
+    // Disabled rows are never visible.
+    if (!$block->status()) {
+      return [];
+    }
+
     $return = [];
     $block_id = $block->id();
 
