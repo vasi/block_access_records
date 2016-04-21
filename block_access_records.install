@@ -1,0 +1,54 @@
+<?php
+
+/**
+ * @file
+ * Installation code for block_access_records module.
+ */
+
+/**
+ * Implements hook_schema().
+ *
+ * Setup the table for block access records.
+ */
+function block_access_records_schema() {
+  $schema['block_access_records'] = [
+    'description' => 'Block visibility records.',
+    'fields' => [
+      'block' => [
+        'description' => 'Block ID to place',
+        'type' => 'varchar_ascii',
+        'length' => 255,
+      ],
+      'context' => [
+        'description' => 'Context to match on',
+        'type' => 'varchar_ascii',
+        'length' => 255,
+      ],
+      'value' => [
+        'description' => 'Value to match on',
+        'type' => 'varchar',
+        'length' => 255,
+      ],
+      'negate' => [
+        'description' => 'Whether the match is negated',
+        'type' => 'int',
+        'not null' => TRUE,
+      ],
+    ],
+    'indexes' => [
+      'block' => ['block'],
+      'search' => ['context', 'value', 'negate'],
+    ],
+  ];
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ *
+ * Build the block access records when the module is installed.
+ */
+function block_access_records_install() {
+  $repository = \Drupal::service('block.repository.access_records');
+  $repository->rebuildAccessRecords();
+}

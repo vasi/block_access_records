@@ -1,0 +1,7 @@
+services:
+  plugin.manager.block_access_records:
+    class: Drupal\block_access_records\BlockAccessRecordsPluginManager
+    parent: default_plugin_manager
+  block.repository.access_records:
+    class: Drupal\block_access_records\BlockAccessRepository
+    arguments: ['@entity_type.manager', '@theme.manager', '@database', '@plugin.manager.block_access_records']

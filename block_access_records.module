@@ -1,0 +1,35 @@
+<?php
+
+/**
+ * @file
+ * Hooks for block_access_records module.
+ */
+
+use Drupal\block\Entity\Block;
+
+/**
+ * Implements hook_block_update().
+ *
+ * Update the access records when a block is saved.
+ */
+function block_access_records_block_update(Block $block) {
+  \Drupal::service('block.repository.access_records')->updateAccessRecords($block);
+}
+
+/**
+ * Implements hook_block_insert().
+ *
+ * Update the access records when a block is saved.
+ */
+function block_access_records_block_insert(Block $block) {
+  \Drupal::service('block.repository.access_records')->updateAccessRecords($block);
+}
+
+/**
+ * Implements hook_block_delete().
+ *
+ * Update the access records when a block is deleted.
+ */
+function block_access_records_block_delete(Block $block) {
+  \Drupal::service('block.repository.access_records')->updateAccessRecords($block, TRUE);
+}

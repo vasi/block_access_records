@@ -1,0 +1,6 @@
+type: module
+name: Fast block visibility
+description: "Make block visibility calculation faster."
+core: '8.x'
+dependencies:
+  - block
