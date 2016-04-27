@@ -76,7 +76,11 @@ class NodeType extends BlockAccessRecordsPluginBase implements ContainerFactoryP
     }
     if ($this->routeMatch->getRouteName() == 'node.add') {
       // Also add the type of the node we're creating.
-      $types[] = $this->routeMatch->getParameter('node_type');
+      if ($type = $this->routeMatch->getParameter('node_type')) {
+        if ($type instanceof NodeTypeInterface) {
+          $types[] = $type->id();
+        }
+      }
     }
     $cacheable_metadata->addCacheContexts(['route']);
 
