@@ -11,13 +11,16 @@ use Drupal\block_access_records\BlockAccessRecordsPluginBase;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\node\NodeInterface;
+use Drupal\node\NodeTypeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * A block access plugin for the current node type, if one exists.
  *
  * @Plugin(
- *   id = "node_type"
+ *   id = "node_type",
+ *   label = @Translation("Node type")
  * )
  */
 class NodeType extends BlockAccessRecordsPluginBase implements ContainerFactoryPluginInterface {
@@ -72,7 +75,9 @@ class NodeType extends BlockAccessRecordsPluginBase implements ContainerFactoryP
     $types = [];
     if ($node = $this->routeMatch->getParameter('node')) {
       // Add the type of the current node.
-      $types[] = $node->bundle();
+      if ($node instanceof NodeInterface) {
+        $types[] = $node->bundle();
+      }
     }
     if ($this->routeMatch->getRouteName() == 'node.add') {
       // Also add the type of the node we're creating.

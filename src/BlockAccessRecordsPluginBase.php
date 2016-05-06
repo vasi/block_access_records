@@ -44,13 +44,25 @@ abstract class BlockAccessRecordsPluginBase extends PluginBase implements BlockA
   /**
    * {@inheritdoc}
    */
-  public function accessRecords(BlockInterface $block) {
+  public function handledConditions() {
     $parents = $this->visibilityParents();
     if (empty($parents)) {
-      throw new \Exception("Can't get block visibility parents");
+      return [];
+    }
+    return [reset($parents)];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function accessRecords(BlockInterface $block, array &$visibility) {
+    $parents = $this->visibilityParents();
+    if (empty($parents)) {
+      throw (new BlockAccessVisibilityException($this->t("Can't get block visibility parents")))
+        ->setPlugin($this)
+        ->setBlock($block);
     }
 
-    $visibility = $block->getVisibility();
     $exists = NULL;
     $values = NestedArray::getValue($visibility, $parents, $exists);
     if (!$exists) {
@@ -60,6 +72,11 @@ abstract class BlockAccessRecordsPluginBase extends PluginBase implements BlockA
     $contexts = $this->contexts();
     $record = new BlockAccessRecord(reset($contexts));
     $record->setValues(array_keys($values));
+    $record->setNegated(!empty($visibility[reset($parents)]['negate']));
+
+    // We've used this visibility attribute.
+    unset($visibility[reset($parents)]);
+
     return [$record];
   }
 

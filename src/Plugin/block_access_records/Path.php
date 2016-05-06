@@ -27,7 +27,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * In addition to complete paths, it also supports simple wildcards.
  *
  * @Plugin(
- *   id = "path"
+ *   id = "path",
+ *   label = @Translation("Path")
  * )
  */
 class Path extends BlockAccessRecordsPluginBase implements ContainerFactoryPluginInterface {
@@ -149,9 +150,8 @@ class Path extends BlockAccessRecordsPluginBase implements ContainerFactoryPlugi
   /**
    * {@inheritdoc}
    */
-  public function accessRecords(BlockInterface $block) {
+  public function accessRecords(BlockInterface $block, array &$visibility) {
     $records = [];
-    $visibility = $block->getVisibility();
     if (isset($visibility['request_path']['pages'])) {
       $record = new BlockAccessRecord('path');
 
@@ -167,9 +167,18 @@ class Path extends BlockAccessRecordsPluginBase implements ContainerFactoryPlugi
         $record->addValue($page);
       }
       $records[] = $record;
+
+      unset($visibility['request_path']);
     }
 
     return $records;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function handledConditions() {
+    return ['request_path'];
   }
 
 }

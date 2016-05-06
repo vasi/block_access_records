@@ -17,7 +17,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * A block access plugin for the current role IDs.
  *
  * @Plugin(
- *   id = "role"
+ *   id = "role",
+ *   label = @Translation("User role")
  * )
  */
 class Role extends BlockAccessRecordsPluginBase implements ContainerFactoryPluginInterface {

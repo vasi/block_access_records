@@ -19,7 +19,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * A block access plugin for the current theme name.
  *
  * @Plugin(
- *   id = "theme"
+ *   id = "theme",
+ *   label = @Translation("Theme")
  * )
  */
 class Theme extends BlockAccessRecordsPluginBase implements ContainerFactoryPluginInterface {
@@ -79,7 +80,7 @@ class Theme extends BlockAccessRecordsPluginBase implements ContainerFactoryPlug
   /**
    * {@inheritdoc}
    */
-  public function accessRecords(BlockInterface $block) {
+  public function accessRecords(BlockInterface $block, array &$visibility) {
     $record = new BlockAccessRecord('theme');
     $record->addValue($block->getTheme());
     return [$record];

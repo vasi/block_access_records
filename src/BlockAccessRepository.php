@@ -7,17 +7,26 @@
 
 namespace Drupal\block_access_records;
 
+use Drupal\block\BlockInterface;
 use Drupal\block\BlockRepositoryInterface;
-use Drupal\block\Entity\Block;
 use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\Core\Condition\ConditionInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\ModuleHandler;
+use Drupal\Core\Form\FormState;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Plugin\ContextAwarePluginInterface;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\Core\StringTranslation\TranslationInterface;
 use Drupal\Core\Theme\ThemeManagerInterface;
 
 /**
  * A block repository that uses access records to determine visibility.
  */
 class BlockAccessRepository implements BlockRepositoryInterface {
+  use StringTranslationTrait;
+
   /**
    * The block storage.
    *
@@ -47,6 +56,13 @@ class BlockAccessRepository implements BlockRepositoryInterface {
   protected $recordPluginManager;
 
   /**
+   * The module handler.
+   *
+   * @var \Drupal\Core\Extension\ModuleHandler $moduleHandler
+   */
+  protected $moduleHandler;
+
+  /**
    * BlockAccessRepository constructor.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $type_manager
@@ -57,12 +73,16 @@ class BlockAccessRepository implements BlockRepositoryInterface {
    *   The database connection.
    * @param \Drupal\block_access_records\BlockAccessRecordsPluginManager $record_plugin_manager
    *   The access record plugin manager.
+   * @param \Drupal\Core\StringTranslation\TranslationInterface $translation
+   *   The string translation interface.
    */
-  public function __construct(EntityTypeManagerInterface $type_manager, ThemeManagerInterface $theme_manager, Connection $connection, BlockAccessRecordsPluginManager $record_plugin_manager) {
+  public function __construct(EntityTypeManagerInterface $type_manager, ThemeManagerInterface $theme_manager, Connection $connection, BlockAccessRecordsPluginManager $record_plugin_manager, TranslationInterface $translation, ModuleHandler $module_handler) {
     $this->blockStorage = $type_manager->getStorage('block');
     $this->themeManager = $theme_manager;
     $this->connection = $connection;
     $this->recordPluginManager = $record_plugin_manager;
+    $this->stringTranslation = $translation;
+    $this->moduleHandler = $module_handler;
   }
 
   /**
@@ -77,9 +97,11 @@ class BlockAccessRepository implements BlockRepositoryInterface {
     $cacheable_metadata_list[] = $cacheable_metadata;
 
     // Get a list of regions.
-    $regions = array_fill_keys($this->themeManager->getActiveTheme()->getRegions(), []);
+    $regions = array_fill_keys($this->themeManager->getActiveTheme()
+      ->getRegions(), []);
     // Get a superset of blocks that may be visible, based on access records.
     $block_ids = $this->getVisibleBlocks($cacheable_metadata);
+    $visible = [];
 
     if (!empty($block_ids)) {
       $account = \Drupal::currentUser();
@@ -89,24 +111,51 @@ class BlockAccessRepository implements BlockRepositoryInterface {
 
       // Assign blocks to regions.
       foreach ($blocks as $block_id => $block) {
-        /** @var \Drupal\block\Entity\Block $block */
+        /** @var \Drupal\block\BlockInterface $block */
         $region = $block->getRegion();
         // Check that the region exists before doing an expensive access check.
         if (isset($regions[$region])) {
+          // Check if any hooks forbid this block.
+          if ($this->hooksForbid($block, $account)) {
+            continue;
+          }
+
           // Check if the plugin forbids this block.
           if ($block->getPlugin()->access($account, TRUE)->isForbidden()) {
             continue;
           }
-          $regions[$region][$block_id] = $block;
+          $visible[$block_id] = $block;
         }
       }
     }
 
+    // Allow modules to change the visible blocks.
+    $this->moduleHandler->alter('block_visibility', $visible);
+
     // Sort the blocks.
+    foreach ($visible as $id => $block) {
+      $regions[$block->getRegion()][$id] = $block;
+    }
     foreach ($regions as &$region) {
       uasort($region, 'Drupal\block\Entity\Block::sort');
     }
+
     return $regions;
+  }
+
+  /**
+   * Check if hooks forbid a block.
+   */
+  protected function hooksForbid(BlockInterface $block, $account) {
+    foreach (['entity_access', 'block_access'] as $hook) {
+      $access = $this->moduleHandler->invokeAll($hook, [$block, 'view', $account]);
+      foreach ($access as $result) {
+        if ($result->isForbidden()) {
+          return TRUE;
+        }
+      }
+    }
+    return FALSE;
   }
 
   /**
@@ -184,22 +233,19 @@ class BlockAccessRepository implements BlockRepositoryInterface {
    * May either delete the records, or delete them and replace them with
    * updated records.
    *
-   * TODO: It might be nice to check $block->getVisibility(), and make sure
-   * no conditions are unhandled. Otherwise, there could be new Conditions
-   * that we don't know about!
-   *
-   * @param \Drupal\block\Entity\Block $block
+   * @param \Drupal\block\BlockInterface $block
    *   The block for which to update.
    * @param bool $delete_only
    *   Whether to only delete records for this block.
    */
-  public function updateAccessRecords(Block $block, $delete_only = FALSE) {
-    // Calculate new values.
-    $rows = $delete_only ? [] : $this->buildAccessRows($block);
-
-    // Ensure deleting and re-adding happen together.
-    $transaction = $this->connection->startTransaction();
+  public function updateAccessRecords(BlockInterface $block, $delete_only = FALSE) {
     try {
+      // Calculate new values.
+      $rows = $delete_only ? [] : $this->buildAccessRows($block);
+
+      // Ensure deleting and re-adding happen together.
+      $transaction = $this->connection->startTransaction();
+
       // Delete old items.
       $id = $block->id();
       $this->connection->delete('block_access_records')
@@ -215,44 +261,88 @@ class BlockAccessRepository implements BlockRepositoryInterface {
         }
         $insert->execute();
       }
-    }
-    catch (\Exception $e) {
-      $transaction->rollback();
+    } catch (\Exception $e) {
+      if (!empty($transaction)) {
+        $transaction->rollback();
+      }
       throw $e;
     }
   }
 
   /**
+   * Get the visibility conditions a plugin handles.
+   *
+   * @param $plugin
+   *   The plugin.
+   */
+  protected function handledConditions(BlockAccessRecordsPluginInterface $plugin) {
+    if (method_exists($plugin, 'visibilityParents')) {
+      $parents = $plugin->visibilityParents();
+      return [reset($parents)];
+    }
+    return [];
+  }
+
+  /**
    * Build the access records for a block.
    *
-   * @param \Drupal\block\Entity\Block $block
+   * @param \Drupal\block\BlockInterface $block
    *   The block.
    *
    * @return BlockAccessRecord[]
    *   The new access records.
    */
-  protected function buildAccessRecords(Block $block) {
+  protected function buildAccessRecords(BlockInterface $block, &$errors = []) {
+    $visibility = $block->getVisibility();
+
     // Ask each plugin for records.
     $return = [];
     foreach ($this->recordPluginManager->getInstances() as $instance) {
       /** @var BlockAccessRecordsPluginInterface $instance */
       $contexts = array_fill_keys($instance->contexts(), 1);
 
-      // Ensure records match the contexts reported by the plugin.
-      $records = $instance->accessRecords($block);
-      foreach ($records as $record) {
-        $context = $record->getContext();
-        if (!isset($contexts[$context])) {
-          throw new \Exception("Unknown block access record context '$context'");
+      try {
+        $records = $instance->accessRecords($block, $visibility);
+
+        // Ensure records match the contexts reported by the plugin.
+        foreach ($records as $record) {
+          $context = $record->getContext();
+          if (!isset($contexts[$context])) {
+            $message = $this->t(
+              "Unknown block_access_records context '@context'", ['@context' => $context]
+            );
+            $errors[] = (new BlockAccessVisibilityException($message))
+              ->setPlugin($instance)
+              ->setBlock($block)
+              ->setConditions($this->handledConditions($instance));
+            continue;
+          }
+          $return[] = $record;
+          unset($contexts[$context]);
         }
-        $return[] = $record;
-        unset($contexts[$context]);
+
+        // Generate empty records if some are missing.
+        foreach (array_keys($contexts) as $context) {
+          $return[] = new BlockAccessRecord($context);
+        }
+
+      } catch (BlockAccessVisibilityException $e) {
+        $errors[] = $e;
+      } catch (\Exception $e) {
+        $errors[] = (new BlockAccessVisibilityException($e->getMessage(), $e))
+          ->setPlugin($instance)
+          ->setBlock($block)
+          ->setConditions($this->handledConditions($instance));
       }
 
-      // Generate empty records if some are missing.
-      foreach (array_keys($contexts) as $context) {
-        $return[] = new BlockAccessRecord($context);
-      }
+    }
+
+    if (!empty($visibility)) {
+      $unhandled = array_keys($visibility);
+      sort($unhandled);
+      $errors[] = (new BlockAccessVisibilityException($this->t("Condition can't be handled by block_access_records")))
+        ->setBlock($block)
+        ->setConditions($unhandled);
     }
 
     return $return;
@@ -263,13 +353,13 @@ class BlockAccessRepository implements BlockRepositoryInterface {
    *
    * Each row should have fields [block-id, context, value, negated].
    *
-   * @param \Drupal\block\Entity\Block $block
+   * @param \Drupal\block\BlockInterface $block
    *   The block.
    *
    * @return array
    *   An array of arrays of fields.
    */
-  protected function buildAccessRows(Block $block) {
+  protected function buildAccessRows(BlockInterface $block) {
     // Disabled rows are never visible.
     if (!$block->status()) {
       return [];
@@ -279,7 +369,12 @@ class BlockAccessRepository implements BlockRepositoryInterface {
     $block_id = $block->id();
 
     // Get the records to turn into DB rows.
-    $records = $this->buildAccessRecords($block);
+    $errors = [];
+    $records = $this->buildAccessRecords($block, $errors);
+    if (!empty($errors)) {
+      throw $errors[0];
+    }
+
     foreach ($records as $record) {
       $values = $record->getValues();
       $negated = (int) $record->isNegated();
@@ -297,6 +392,96 @@ class BlockAccessRepository implements BlockRepositoryInterface {
     }
 
     return $return;
+  }
+
+  /**
+   * Alter a block form to hide unsupported conditions.
+   */
+  public function alterForm(&$form, FormStateInterface $state, $form_id) {
+    $form['#validate'][] = [$this, 'validateForm'];
+
+    $handled = [];
+    foreach ($this->recordPluginManager->getInstances() as $instance) {
+      foreach ($instance->handledConditions() as $id) {
+        $handled[$id] = TRUE;
+      }
+    }
+
+    foreach ($state->get(['conditions']) as $id => $condition) {
+      if (!isset($handled[$id])) {
+        /** @var ConditionInterface $condition */
+        $condition->setConfiguration($condition->defaultConfiguration());
+        $default_form = $condition->buildConfigurationForm([], $state);
+
+        $elements =& $form['visibility'][$id];
+        $elements = array_merge($elements, $default_form);
+
+        $elements['#disabled'] = TRUE;
+        $elements['#title'] = $this->t('@title (disabled)', ['@title' => $elements['#title']]);
+        $elements['#description'] = $this->t('This condition is disabled, because it is not supported by block_access_records');
+      }
+    }
+  }
+
+  /**
+   * Build a block from the form, so it can be validated.
+   */
+  protected function buildFormEntity(&$form, FormStateInterface $state) {
+    /** @var \Drupal\block\BlockForm $form_object */
+    $form_object = $state->getFormObject();
+    /** @var BlockInterface $block */
+    $block = $form_object->buildEntity($form, $state);
+
+    // Submit the conditions.
+    foreach ($state->get(['conditions']) as $id => $condition) {
+      /** @var ConditionInterface $condition */
+      $values = $state->getValue(['visibility', $id]);
+      $value_state = (new FormState())->setValues($values);
+      $condition->submitConfigurationForm($form, $value_state);
+      if ($condition instanceof ContextAwarePluginInterface) {
+        $context_mapping = isset($values['context_mapping']) ? $values['context_mapping'] : [];
+        $condition->setContextMapping($context_mapping);
+      }
+
+      $block->getVisibilityConditions()->addInstanceId($id, $condition->getConfiguration());
+    }
+
+    // Make sure the entity has a sane visibility array.
+    $config = $block->getVisibilityConditions()->getConfiguration();
+    $block->set('visibility', $config);
+    return $block;
+  }
+
+  /**
+   * Validate a block form.
+   */
+  public function validateForm(&$form, FormStateInterface $state) {
+    $block = $this->buildFormEntity($form, $state);
+
+    // Check that our config is valid.
+    /** @var BlockAccessVisibilityException[] $errors */
+    $errors = [];
+    $this->buildAccessRecords($block, $errors);
+
+    // Add any errors to the form.
+    if (!empty($errors)) {
+      foreach ($errors as $error) {
+        $conditions = $error->getConditions();
+        if (empty($conditions)) {
+          $conditions[] = NULL;
+        }
+
+        foreach ($conditions as $condition) {
+          $element =& $form['visibility'];
+          if ($condition) {
+            $element =& $element[$condition];
+          }
+
+          $message = $error->errorMessage($condition, $state->get('conditions'));
+          $state->setError($element, $message);
+        }
+      }
+    }
   }
 
 }

@@ -5,14 +5,15 @@
  * Hooks for block_access_records module.
  */
 
-use Drupal\block\Entity\Block;
+use Drupal\block\BlockInterface;
+use Drupal\Core\Form\FormStateInterface;
 
 /**
  * Implements hook_block_update().
  *
  * Update the access records when a block is saved.
  */
-function block_access_records_block_update(Block $block) {
+function block_access_records_block_update(BlockInterface $block) {
   \Drupal::service('block.repository.access_records')->updateAccessRecords($block);
 }
 
@@ -21,7 +22,7 @@ function block_access_records_block_update(Block $block) {
  *
  * Update the access records when a block is saved.
  */
-function block_access_records_block_insert(Block $block) {
+function block_access_records_block_insert(BlockInterface $block) {
   \Drupal::service('block.repository.access_records')->updateAccessRecords($block);
 }
 
@@ -30,6 +31,13 @@ function block_access_records_block_insert(Block $block) {
  *
  * Update the access records when a block is deleted.
  */
-function block_access_records_block_delete(Block $block) {
+function block_access_records_block_delete(BlockInterface $block) {
   \Drupal::service('block.repository.access_records')->updateAccessRecords($block, TRUE);
+}
+
+/**
+ * Implements hook_form_BASE_FORM_ID_alter().
+ */
+function block_access_records_form_block_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  \Drupal::service('block.repository.access_records')->alterForm($form, $form_state, $form_id);
 }

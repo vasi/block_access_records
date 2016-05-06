@@ -7,7 +7,9 @@
 
 namespace Drupal\block_access_records\Plugin\block_access_records;
 
+use Drupal\block\BlockInterface;
 use Drupal\block_access_records\BlockAccessRecordsPluginBase;
+use Drupal\Component\Utility\NestedArray;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
@@ -17,7 +19,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * A block access plugin for the current language ID.
  *
  * @Plugin(
- *   id = "language"
+ *   id = "language",
+ *   label = @Translation("Language")
  * )
  */
 class Language extends BlockAccessRecordsPluginBase implements ContainerFactoryPluginInterface {
@@ -79,6 +82,14 @@ class Language extends BlockAccessRecordsPluginBase implements ContainerFactoryP
    */
   protected function visibilityParents() {
     return ['language', 'langcodes'];
+  }
+
+  public function accessRecords(BlockInterface $block, array &$visibility) {
+    $mapping = NestedArray::getValue($visibility, ['language', 'context_mapping', 'language']);
+    if ($mapping !== '@language.current_language_context:language_interface') {
+      return [];
+    }
+    return parent::accessRecords($block, $visibility);
   }
 
 }

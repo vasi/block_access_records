@@ -8,6 +8,7 @@
 namespace Drupal\block_access_records;
 
 use Drupal\block\BlockInterface;
+use Drupal\Component\Plugin\PluginInspectionInterface;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Database\Query\ConditionInterface;
 
@@ -18,7 +19,7 @@ use Drupal\Core\Database\Query\ConditionInterface;
  * and context values for the current request. Only if the context matches the
  * access records is the block allowed.
  */
-interface BlockAccessRecordsPluginInterface {
+interface BlockAccessRecordsPluginInterface extends PluginInspectionInterface {
 
   /**
    * Get all contexts this plugin may provide.
@@ -41,7 +42,7 @@ interface BlockAccessRecordsPluginInterface {
    * Eg: A node_type context might return ['node_type' => ['page']];
    *
    * @param \Drupal\Core\Cache\CacheableMetadata $cacheable_metadata
-   *   The metadata for calculating block visiblity, to be altered.
+   *   The metadata for calculating block visibility, to be altered.
    *
    * @return array
    *   The context values.
@@ -57,11 +58,14 @@ interface BlockAccessRecordsPluginInterface {
    *
    * @param \Drupal\block\BlockInterface $block
    *   The block being saved.
+   * @param array &$visibility
+   *   The block's visibility conditions. Plugins should remove any condition
+   *   that they have used, to record that it has been processed.
    *
-   * @return BlockAccessRecord[]
-   *   Records for this block.
+   * @return \Drupal\block_access_records\BlockAccessRecord[] Records for this block.
+   * Records for this block.
    */
-  public function accessRecords(BlockInterface $block);
+  public function accessRecords(BlockInterface $block, array &$visibility);
 
   /**
    * Add a query condition for a context.
@@ -86,5 +90,13 @@ interface BlockAccessRecordsPluginInterface {
    *   The field to match against.
    */
   public function addCondition($context, $values, ConditionInterface $query, $field);
+
+  /**
+   * Get the conditions IDs that this plugin can handle.
+   *
+   * @return array
+   *   The conditions IDs, eg: ['request_path'].
+   */
+  public function handledConditions();
 
 }
