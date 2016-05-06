@@ -50,5 +50,14 @@ function block_access_records_schema() {
  */
 function block_access_records_install() {
   $repository = \Drupal::service('block.repository.access_records');
-  $repository->rebuildAccessRecords();
+  $exceptions = $repository->rebuildAccessRecords();
+  foreach ($exceptions as $e) {
+    drupal_set_message(t(
+      'Error building records for block "@block": @message',
+      ['@block' => $e->getBlock()->label(), '@message' => $e->getMessage()]
+    ), 'error');
+  }
+  if (!empty($exceptions)) {
+    drupal_set_message(t('Blocks whose records cannot be built will not be displayed. Please fix their configuration, or uninstall this module.'), 'error');
+  }
 }

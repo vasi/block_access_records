@@ -220,11 +220,21 @@ class BlockAccessRepository implements BlockRepositoryInterface {
 
   /**
    * Rebuild all block access records.
+   *
+   * @return \Drupal\block_access_records\BlockAccessVisibilityException[]
+   *   Any errors that were thrown.
    */
   public function rebuildAccessRecords() {
+    $exceptions = [];
     foreach ($this->blockStorage->loadMultiple() as $block) {
-      $this->updateAccessRecords($block);
+      try {
+        $this->updateAccessRecords($block);
+      }
+      catch (\Exception $e) {
+        $exceptions[] = $e;
+      }
     }
+    return $exceptions;
   }
 
   /**
@@ -340,7 +350,7 @@ class BlockAccessRepository implements BlockRepositoryInterface {
     if (!empty($visibility)) {
       $unhandled = array_keys($visibility);
       sort($unhandled);
-      $errors[] = (new BlockAccessVisibilityException($this->t("Condition can't be handled by block_access_records")))
+      $errors[] = (new BlockAccessVisibilityException($this->t("Condition cannot be handled by block_access_records")))
         ->setBlock($block)
         ->setConditions($unhandled);
     }

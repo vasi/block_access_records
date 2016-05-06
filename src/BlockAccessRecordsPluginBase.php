@@ -58,7 +58,7 @@ abstract class BlockAccessRecordsPluginBase extends PluginBase implements BlockA
   public function accessRecords(BlockInterface $block, array &$visibility) {
     $parents = $this->visibilityParents();
     if (empty($parents)) {
-      throw (new BlockAccessVisibilityException($this->t("Can't get block visibility parents")))
+      throw (new BlockAccessVisibilityException($this->t("Cannot get block visibility parents")))
         ->setPlugin($this)
         ->setBlock($block);
     }
