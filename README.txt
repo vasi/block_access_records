@@ -7,7 +7,7 @@ Unfortunately, checking which blocks should be visible on a page gets really slo
 
 This module implements a fast way of checking, inspired by the node_access system. It generates a single query that does most of the work, and then only loads the blocks that are likely to be visible. On the site mentioned above, it cut over 90 ms off the time taken.
 
-It currently works with all the visibility conditions in Drupal core: path, language, user role, and node type. It's also extensible, so you can add plugins that handler other types of conditions.
+It currently works with all the visibility conditions in Drupal core: path, language, user role, and node type. It's also extensible, so you can add plugins that handle other types of conditions.
 
 Caveats:
 * If you have custom conditions, you'll have to extend this module. This module does at least ensure that you don't add conditions that aren't supported.
